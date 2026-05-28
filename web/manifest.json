@@ -1,11 +1,11 @@
 {
-    "name": "keepday",
-    "short_name": "keepday",
+    "name": "KeepDay",
+    "short_name": "KeepDay",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "KeepDay is a local-first habit check-in app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
