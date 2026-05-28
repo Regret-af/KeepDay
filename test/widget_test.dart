@@ -15,9 +15,11 @@ void main() {
         child: const KeepDayApp(),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('KeepDay'), findsOneWidget);
-    expect(find.text('工程准备'), findsOneWidget);
+    expect(find.text('还没有习惯'), findsOneWidget);
+    expect(find.text('创建习惯'), findsWidgets);
 
     await database.close();
   });
