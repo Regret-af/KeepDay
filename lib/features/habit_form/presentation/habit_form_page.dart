@@ -22,8 +22,8 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   final _nameController = TextEditingController();
   String _icon = _emojiOptions.first;
   String _color = _colorOptions.first.value;
-  int _gracePerWeek = 1;
-  bool _reminderEnabled = true;
+  int _gracePerWeek = 0;
+  bool _reminderEnabled = false;
   TimeOfDay _reminderTime = const TimeOfDay(hour: 8, minute: 0);
   bool _loadedHabit = false;
   bool _saving = false;
