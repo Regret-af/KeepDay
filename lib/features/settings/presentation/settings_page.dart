@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../shared/widgets/keepday_shell.dart';
@@ -31,6 +32,7 @@ class SettingsPage extends StatelessWidget {
               icon: Icons.format_list_bulleted,
               iconColor: keepdayPrimary,
               title: '习惯管理',
+              onTap: () => context.push('/settings/habits'),
               trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -132,18 +134,20 @@ class _SettingsRow extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.title,
+    this.onTap,
     this.trailing,
   });
 
   final IconData icon;
   final Color iconColor;
   final String title;
+  final VoidCallback? onTap;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () {},
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
