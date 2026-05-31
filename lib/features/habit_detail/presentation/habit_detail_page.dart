@@ -216,7 +216,8 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final durationDays = DateTime.now()
+    final durationDays =
+        DateTime.now()
             .difference(
               DateTime(
                 habit.createdAt.year,
@@ -438,7 +439,9 @@ class _Legend extends StatelessWidget {
             color: outlined ? null : color,
             borderRadius: BorderRadius.circular(2),
             border: Border.all(
-              color: outlined ? (color ?? keepdayPrimary) : (color ?? keepdayLine),
+              color: outlined
+                  ? (color ?? keepdayPrimary)
+                  : (color ?? keepdayLine),
               width: outlined ? 2 : 1,
             ),
           ),

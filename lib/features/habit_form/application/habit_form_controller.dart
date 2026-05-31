@@ -70,7 +70,8 @@ class HabitFormController {
     );
   }
 
-  Future<String> create(HabitInput input) => _habitRepository.createHabit(input);
+  Future<String> create(HabitInput input) =>
+      _habitRepository.createHabit(input);
 
   Future<void> update(String id, HabitInput input) {
     return _habitRepository.updateHabit(id, input);

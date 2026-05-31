@@ -16,8 +16,7 @@ class Habits extends Table {
   IntColumn get gracePerWeek => integer().withDefault(const Constant(0))();
   TextColumn get status => text().withDefault(const Constant('normal'))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
-  IntColumn get totalCheckInCount =>
-      integer().withDefault(const Constant(0))();
+  IntColumn get totalCheckInCount => integer().withDefault(const Constant(0))();
   IntColumn get bestStreak => integer().withDefault(const Constant(0))();
   IntColumn get currentStreak => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
@@ -85,13 +84,15 @@ class HabitDao extends DatabaseAccessor<AppDatabase> with _$HabitDaoMixin {
   }
 
   Future<Habit?> getHabitById(String id) {
-    return (select(habits)..where((habit) => habit.id.equals(id)))
-        .getSingleOrNull();
+    return (select(
+      habits,
+    )..where((habit) => habit.id.equals(id))).getSingleOrNull();
   }
 
   Stream<Habit?> watchHabitById(String id) {
-    return (select(habits)..where((habit) => habit.id.equals(id)))
-        .watchSingleOrNull();
+    return (select(
+      habits,
+    )..where((habit) => habit.id.equals(id))).watchSingleOrNull();
   }
 
   Future<int> getNextSortOrder() async {
@@ -126,33 +127,26 @@ class HabitDao extends DatabaseAccessor<AppDatabase> with _$HabitDaoMixin {
 
   Future<void> softDeleteHabit(String id, DateTime deletedAt) {
     return (update(habits)..where((table) => table.id.equals(id))).write(
-      HabitsCompanion(
-        deletedAt: Value(deletedAt),
-        updatedAt: Value(deletedAt),
-      ),
+      HabitsCompanion(deletedAt: Value(deletedAt), updatedAt: Value(deletedAt)),
     );
   }
 
   Future<void> updateTotalCheckInCount(String habitId, int count) {
     final now = DateTime.now();
     return (update(habits)..where((table) => table.id.equals(habitId))).write(
-      HabitsCompanion(
-        totalCheckInCount: Value(count),
-        updatedAt: Value(now),
-      ),
+      HabitsCompanion(totalCheckInCount: Value(count), updatedAt: Value(now)),
     );
   }
 }
 
 @DriftAccessor(tables: [CheckInRecords])
-class CheckInDao extends DatabaseAccessor<AppDatabase>
-    with _$CheckInDaoMixin {
+class CheckInDao extends DatabaseAccessor<AppDatabase> with _$CheckInDaoMixin {
   CheckInDao(super.db);
 
   Stream<List<CheckInRecord>> watchRecordsForDate(String date) {
-    return (select(checkInRecords)
-          ..where((record) => record.checkInDate.equals(date)))
-        .watch();
+    return (select(
+      checkInRecords,
+    )..where((record) => record.checkInDate.equals(date))).watch();
   }
 
   Future<List<CheckInRecord>> getRecordsByHabitId(String habitId) {
@@ -162,16 +156,11 @@ class CheckInDao extends DatabaseAccessor<AppDatabase>
         .get();
   }
 
-  Future<CheckInRecord?> getRecordByHabitAndDate(
-    String habitId,
-    String date,
-  ) {
-    return (select(checkInRecords)
-          ..where(
-            (record) =>
-                record.habitId.equals(habitId) &
-                record.checkInDate.equals(date),
-          ))
+  Future<CheckInRecord?> getRecordByHabitAndDate(String habitId, String date) {
+    return (select(checkInRecords)..where(
+          (record) =>
+              record.habitId.equals(habitId) & record.checkInDate.equals(date),
+        ))
         .getSingleOrNull();
   }
 
@@ -184,19 +173,14 @@ class CheckInDao extends DatabaseAccessor<AppDatabase>
   }
 
   Future<void> insertRecord(CheckInRecordsCompanion record) {
-    return into(checkInRecords).insert(
-      record,
-      mode: InsertMode.insertOrIgnore,
-    );
+    return into(checkInRecords).insert(record, mode: InsertMode.insertOrIgnore);
   }
 
   Future<void> deleteRecord(String habitId, String date) {
-    return (delete(checkInRecords)
-          ..where(
-            (record) =>
-                record.habitId.equals(habitId) &
-                record.checkInDate.equals(date),
-          ))
+    return (delete(checkInRecords)..where(
+          (record) =>
+              record.habitId.equals(habitId) & record.checkInDate.equals(date),
+        ))
         .go();
   }
 }

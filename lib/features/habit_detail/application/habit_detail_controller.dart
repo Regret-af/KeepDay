@@ -11,9 +11,8 @@ final habitDetailProvider = StreamProvider.family<Habit?, String>((
   return ref.watch(habitRepositoryProvider).watchHabitById(habitId);
 });
 
-final habitRecordsProvider = FutureProvider.family<List<CheckInRecord>, String>((
-  ref,
-  habitId,
-) {
-  return ref.watch(checkInRepositoryProvider).getRecordsByHabitId(habitId);
-});
+final habitRecordsProvider = FutureProvider.family<List<CheckInRecord>, String>(
+  (ref, habitId) {
+    return ref.watch(checkInRepositoryProvider).getRecordsByHabitId(habitId);
+  },
+);

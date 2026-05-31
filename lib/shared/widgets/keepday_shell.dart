@@ -199,10 +199,7 @@ class KeepDayHabitIcon extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: background,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: background, shape: BoxShape.circle),
       alignment: Alignment.center,
       child: Text(
         icon == null || icon!.isEmpty ? '✓' : icon!,
@@ -244,29 +241,29 @@ class KeepDayStatusRing extends StatelessWidget {
                   width: 2,
                 ),
           boxShadow: checked
-            ? const [
-                BoxShadow(
-                  color: Color(0x22000000),
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
-                ),
-              ]
+              ? const [
+                  BoxShadow(
+                    color: Color(0x22000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ]
               : null,
         ),
         child: checked
             ? const Icon(Icons.check, color: Colors.white, size: 22)
             : grace
-                ? Center(
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: keepdaySecondary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  )
-                : null,
+            ? Center(
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: keepdaySecondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              )
+            : null,
       ),
     );
   }
