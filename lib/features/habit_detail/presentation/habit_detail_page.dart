@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/repositories/check_in_repository.dart';
 import '../../../data/repositories/habit_repository.dart';
+import '../../../domain/services/streak_calculator.dart';
 import '../../../shared/utils/date_utils.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
@@ -20,6 +21,7 @@ class HabitDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final habitAsync = ref.watch(habitDetailProvider(habitId));
     final recordsAsync = ref.watch(habitRecordsProvider(habitId));
+    final pausePeriodsAsync = ref.watch(habitPausePeriodsProvider(habitId));
 
     return Scaffold(
       appBar: AppBar(
@@ -64,57 +66,146 @@ class HabitDetailPage extends ConsumerWidget {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, stackTrace) => Center(child: Text('加载失败：$error')),
             data: (records) {
-              final checkedToday = records.any(
-                (record) => record.checkInDate == todayDateKey(),
-              );
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 28, 16, 40),
-                children: [
-                  _HabitHeader(habit: habit, accent: accent),
-                  const SizedBox(height: 60),
-                  _StatsGrid(habit: habit, accent: accent),
-                  const SizedBox(height: 60),
-                  _CalendarCard(records: records, accent: accent),
-                  const SizedBox(height: 60),
-                  _HeatmapCard(records: records, accent: accent),
-                  const SizedBox(height: 28),
-                  FilledButton.icon(
-                    onPressed: () => _toggleToday(context, ref, checkedToday),
-                    icon: Icon(checkedToday ? Icons.undo : Icons.check),
-                    label: Text(checkedToday ? '取消今日打卡' : '今日打卡'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.pause_circle_outline),
-                    label: const Text('暂停习惯'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: keepdaySecondary,
-                      side: BorderSide(
-                        color: keepdaySecondary.withValues(alpha: 0.28),
+              return pausePeriodsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stackTrace) =>
+                    Center(child: Text('加载失败：$error')),
+                data: (pausePeriods) {
+                  final calculator = const StreakCalculator();
+                  final result = calculator.calculate(
+                    createdAt: habit.createdAt,
+                    gracePerWeek: habit.gracePerWeek,
+                    checkInDates: records.map((record) => record.checkInDate),
+                    pauseRanges: pausePeriods.map(
+                      (period) => PauseRange(
+                        startDate: period.startDate,
+                        endDate: period.endDate,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => _delete(context, ref),
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('删除习惯'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: keepdayDanger,
-                      side: BorderSide(
-                        color: keepdayDanger.withValues(alpha: 0.16),
+                  );
+                  final checkedToday =
+                      result.dateStatuses[todayDateKey()] == DateStatus.checked;
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 28, 16, 40),
+                    children: [
+                      _HabitHeader(habit: habit, accent: accent),
+                      const SizedBox(height: 28),
+                      _StatsGrid(stats: result.stats, accent: accent),
+                      const SizedBox(height: 28),
+                      _CalendarCard(
+                        habit: habit,
+                        statuses: result.dateStatuses,
+                        accent: accent,
+                        onDateTap: (date) => _handleDateTap(
+                          context,
+                          ref,
+                          habit,
+                          records,
+                          result.dateStatuses,
+                          date,
+                        ),
                       ),
-                      backgroundColor: keepdayDanger.withValues(alpha: 0.05),
-                    ),
-                  ),
-                ],
+                      const SizedBox(height: 28),
+                      _HeatmapCard(
+                        habit: habit,
+                        statuses: result.dateStatuses,
+                        accent: accent,
+                      ),
+                      const SizedBox(height: 28),
+                      FilledButton.icon(
+                        onPressed: () =>
+                            _toggleToday(context, ref, checkedToday),
+                        icon: Icon(checkedToday ? Icons.undo : Icons.check),
+                        label: Text(checkedToday ? '取消今日打卡' : '今日打卡'),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => _togglePause(context, ref, habit),
+                        icon: Icon(
+                          habit.status == 'paused'
+                              ? Icons.play_circle_outline
+                              : Icons.pause_circle_outline,
+                        ),
+                        label: Text(habit.status == 'paused' ? '恢复习惯' : '暂停习惯'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: keepdaySecondary,
+                          side: BorderSide(
+                            color: keepdaySecondary.withValues(alpha: 0.28),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => _delete(context, ref),
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('删除习惯'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: keepdayDanger,
+                          side: BorderSide(
+                            color: keepdayDanger.withValues(alpha: 0.16),
+                          ),
+                          backgroundColor: keepdayDanger.withValues(
+                            alpha: 0.05,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
             },
           );
         },
       ),
     );
+  }
+
+  Future<void> _handleDateTap(
+    BuildContext context,
+    WidgetRef ref,
+    Habit habit,
+    List<CheckInRecord> records,
+    Map<String, DateStatus> statuses,
+    DateTime date,
+  ) async {
+    final calculator = const StreakCalculator();
+    final status = calculator.resolveDateStatus(
+      date: date,
+      createdAt: habit.createdAt,
+      statuses: statuses,
+    );
+    final key = localDateKey(date);
+    if (status == DateStatus.beforeCreated || status == DateStatus.future) {
+      AppToast.show(context, '该日期不可操作');
+      return;
+    }
+
+    try {
+      final hasRecord = records.any((record) => record.checkInDate == key);
+      if (hasRecord) {
+        final confirmed = await showConfirmDialog(
+          context,
+          title: '取消打卡',
+          message: '确认取消 ${humanDateLabel(date)} 的打卡记录吗？',
+          confirmLabel: '取消打卡',
+          destructive: true,
+        );
+        if (!confirmed) {
+          return;
+        }
+        await ref.read(checkInRepositoryProvider).cancelCheckIn(habit.id, key);
+      } else {
+        await ref.read(checkInRepositoryProvider).checkInDate(habit.id, key);
+      }
+      ref.invalidate(habitDetailProvider(habitId));
+      ref.invalidate(habitRecordsProvider(habitId));
+      ref.invalidate(habitPausePeriodsProvider(habitId));
+    } catch (error) {
+      if (context.mounted) {
+        AppToast.show(context, '操作失败：$error');
+      }
+    }
   }
 
   Future<void> _toggleToday(
@@ -141,6 +232,38 @@ class HabitDetailPage extends ConsumerWidget {
       }
       ref.invalidate(habitDetailProvider(habitId));
       ref.invalidate(habitRecordsProvider(habitId));
+      ref.invalidate(habitPausePeriodsProvider(habitId));
+    } catch (error) {
+      if (context.mounted) {
+        AppToast.show(context, '操作失败：$error');
+      }
+    }
+  }
+
+  Future<void> _togglePause(
+    BuildContext context,
+    WidgetRef ref,
+    Habit habit,
+  ) async {
+    final repository = ref.read(habitRepositoryProvider);
+    try {
+      if (habit.status == 'paused') {
+        await repository.resumeHabit(habit.id);
+      } else {
+        final confirmed = await showConfirmDialog(
+          context,
+          title: '暂停习惯',
+          message: '暂停后该习惯会移入首页暂停区，暂停期间不消耗宽限。',
+          confirmLabel: '暂停',
+        );
+        if (!confirmed) {
+          return;
+        }
+        await repository.pauseHabit(habit.id);
+      }
+      ref.invalidate(habitDetailProvider(habitId));
+      ref.invalidate(habitRecordsProvider(habitId));
+      ref.invalidate(habitPausePeriodsProvider(habitId));
     } catch (error) {
       if (context.mounted) {
         AppToast.show(context, '操作失败：$error');
@@ -200,7 +323,9 @@ class _HabitHeader extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          '创建于 ${humanDateLabel(habit.createdAt)}',
+          habit.status == 'paused'
+              ? '已暂停 · 创建于 ${humanDateLabel(habit.createdAt)}'
+              : '创建于 ${humanDateLabel(habit.createdAt)}',
           style: const TextStyle(color: keepdayMuted, fontSize: 14),
         ),
       ],
@@ -209,24 +334,13 @@ class _HabitHeader extends StatelessWidget {
 }
 
 class _StatsGrid extends StatelessWidget {
-  const _StatsGrid({required this.habit, required this.accent});
+  const _StatsGrid({required this.stats, required this.accent});
 
-  final Habit habit;
+  final HabitStats stats;
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    final durationDays =
-        DateTime.now()
-            .difference(
-              DateTime(
-                habit.createdAt.year,
-                habit.createdAt.month,
-                habit.createdAt.day,
-              ),
-            )
-            .inDays +
-        1;
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -237,22 +351,22 @@ class _StatsGrid extends StatelessWidget {
       children: [
         _StatTile(
           label: '持续天数',
-          value: durationDays.toString(),
+          value: stats.durationDays.toString(),
           accent: accent,
         ),
         _StatTile(
           label: '累计打卡',
-          value: habit.totalCheckInCount.toString(),
+          value: stats.totalCheckInCount.toString(),
           accent: accent,
         ),
         _StatTile(
           label: '最佳连续',
-          value: habit.bestStreak.toString(),
+          value: stats.bestStreak.toString(),
           accent: accent,
         ),
         _StatTile(
           label: '当前连续',
-          value: habit.currentStreak.toString(),
+          value: stats.currentStreak.toString(),
           accent: keepdaySecondary,
         ),
       ],
@@ -302,19 +416,65 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-class _CalendarCard extends StatelessWidget {
-  const _CalendarCard({required this.records, required this.accent});
+class _CalendarCard extends StatefulWidget {
+  const _CalendarCard({
+    required this.habit,
+    required this.statuses,
+    required this.accent,
+    required this.onDateTap,
+  });
 
-  final List<CheckInRecord> records;
+  final Habit habit;
+  final Map<String, DateStatus> statuses;
   final Color accent;
+  final ValueChanged<DateTime> onDateTap;
+
+  @override
+  State<_CalendarCard> createState() => _CalendarCardState();
+}
+
+class _CalendarCardState extends State<_CalendarCard> {
+  late DateTime _visibleMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _visibleMonth = DateTime(now.year, now.month);
+  }
+
+  void _goPrevious() {
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1);
+    });
+  }
+
+  void _goNext() {
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1);
+    });
+  }
+
+  void _handleSwipe(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity < -240) {
+      _goNext();
+    } else if (velocity > 240) {
+      _goPrevious();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month);
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    final monthStart = _visibleMonth;
+    final daysInMonth = DateTime(
+      _visibleMonth.year,
+      _visibleMonth.month + 1,
+      0,
+    ).day;
     final leading = monthStart.weekday - 1;
-    final checkedDates = records.map((record) => record.checkInDate).toSet();
+    final calculator = const StreakCalculator();
 
     return KeepDayCard(
       child: Column(
@@ -324,47 +484,72 @@ class _CalendarCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '${now.year}年${now.month}月',
+                  '${_visibleMonth.year}年${_visibleMonth.month}月',
                   style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              const Icon(Icons.chevron_left, size: 18, color: keepdayMuted),
-              const Icon(Icons.chevron_right, size: 18, color: keepdayMuted),
+              IconButton(
+                tooltip: '上个月',
+                onPressed: _goPrevious,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              IconButton(
+                tooltip: '下个月',
+                onPressed: _goNext,
+                icon: const Icon(Icons.chevron_right),
+              ),
             ],
           ),
           const SizedBox(height: 16),
-          GridView.count(
-            crossAxisCount: 7,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 8,
-            children: [
-              for (final day in ['一', '二', '三', '四', '五', '六', '日'])
-                Center(
-                  child: Text(
-                    day,
-                    style: const TextStyle(
-                      color: keepdayMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragEnd: _handleSwipe,
+            child: GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 8,
+              children: [
+                for (final day in ['一', '二', '三', '四', '五', '六', '日'])
+                  Center(
+                    child: Text(
+                      day,
+                      style: const TextStyle(
+                        color: keepdayMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-              for (var i = 0; i < leading; i++) const SizedBox.shrink(),
-              for (var day = 1; day <= daysInMonth; day++)
-                _CalendarDay(
-                  day: day,
-                  accent: accent,
-                  checked: checkedDates.contains(
-                    localDateKey(DateTime(now.year, now.month, day)),
+                for (var i = 0; i < leading; i++) const SizedBox.shrink(),
+                for (var day = 1; day <= daysInMonth; day++)
+                  Builder(
+                    builder: (context) {
+                      final date = DateTime(
+                        _visibleMonth.year,
+                        _visibleMonth.month,
+                        day,
+                      );
+                      final status = calculator.resolveDateStatus(
+                        date: date,
+                        createdAt: widget.habit.createdAt,
+                        statuses: widget.statuses,
+                      );
+                      return _CalendarDay(
+                        day: day,
+                        status: status,
+                        accent: widget.accent,
+                        today: isSameLocalDate(date, now),
+                        onTap: () => widget.onDateTap(date),
+                      );
+                    },
                   ),
-                  today: day == now.day,
-                ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 18),
           Wrap(
@@ -372,10 +557,10 @@ class _CalendarCard extends StatelessWidget {
             spacing: 12,
             runSpacing: 8,
             children: [
-              _Legend(color: accent, label: '已打卡'),
-              const _Legend(color: Color(0x55D78A1F), label: '宽限'),
-              _Legend(outlined: true, color: accent, label: '今天'),
-              const _Legend(color: keepdayLine, label: '未打卡'),
+              _Legend(color: widget.accent, label: '已打卡'),
+              const _Legend(color: Color(0xFFD78A1F), label: '宽限'),
+              const _Legend(color: keepdayLine, label: '暂停'),
+              const _Legend(color: Color(0xFFE8EDF0), label: '未打卡'),
             ],
           ),
         ],
@@ -387,32 +572,41 @@ class _CalendarCard extends StatelessWidget {
 class _CalendarDay extends StatelessWidget {
   const _CalendarDay({
     required this.day,
+    required this.status,
     required this.accent,
-    required this.checked,
     required this.today,
+    required this.onTap,
   });
 
   final int day;
+  final DateStatus status;
   final Color accent;
-  final bool checked;
   final bool today;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1,
-      child: Container(
-        decoration: BoxDecoration(
-          color: checked ? accent.withValues(alpha: 0.82) : null,
-          borderRadius: BorderRadius.circular(4),
-          border: today ? Border.all(color: accent, width: 2) : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          '$day',
-          style: TextStyle(
-            color: checked ? Colors.white : keepdayText,
-            fontSize: 14,
+    final disabled =
+        status == DateStatus.beforeCreated || status == DateStatus.future;
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: disabled ? null : onTap,
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _statusColor(status, accent),
+            borderRadius: BorderRadius.circular(4),
+            border: today ? Border.all(color: accent, width: 2) : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '$day',
+            style: TextStyle(
+              color: _statusTextColor(status),
+              fontSize: 14,
+              fontWeight: today ? FontWeight.w800 : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -421,11 +615,10 @@ class _CalendarDay extends StatelessWidget {
 }
 
 class _Legend extends StatelessWidget {
-  const _Legend({this.color, required this.label, this.outlined = false});
+  const _Legend({required this.color, required this.label});
 
-  final Color? color;
+  final Color color;
   final String label;
-  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
@@ -436,13 +629,10 @@ class _Legend extends StatelessWidget {
           width: 12,
           height: 12,
           decoration: BoxDecoration(
-            color: outlined ? null : color,
+            color: color,
             borderRadius: BorderRadius.circular(2),
             border: Border.all(
-              color: outlined
-                  ? (color ?? keepdayPrimary)
-                  : (color ?? keepdayLine),
-              width: outlined ? 2 : 1,
+              color: color == keepdayLine ? keepdayMuted : color,
             ),
           ),
         ),
@@ -453,58 +643,142 @@ class _Legend extends StatelessWidget {
   }
 }
 
-class _HeatmapCard extends StatelessWidget {
-  const _HeatmapCard({required this.records, required this.accent});
+class _HeatmapCard extends StatefulWidget {
+  const _HeatmapCard({
+    required this.habit,
+    required this.statuses,
+    required this.accent,
+  });
 
-  final List<CheckInRecord> records;
+  final Habit habit;
+  final Map<String, DateStatus> statuses;
   final Color accent;
 
   @override
+  State<_HeatmapCard> createState() => _HeatmapCardState();
+}
+
+class _HeatmapCardState extends State<_HeatmapCard> {
+  late int _year;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = DateTime.now().year;
+  }
+
+  void _goPreviousYear() {
+    setState(() => _year -= 1);
+  }
+
+  void _goNextYear() {
+    setState(() => _year += 1);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final checked = records.map((record) => record.checkInDate).toSet();
-    final today = DateTime.now();
+    final calculator = const StreakCalculator();
+    final yearStart = DateTime(_year);
+    final firstCellDate = yearStart.subtract(
+      Duration(days: yearStart.weekday - DateTime.monday),
+    );
     return KeepDayCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Expanded(
+              const Expanded(
                 child: Text(
-                  '历程热力图',
+                  '年度完成热力图',
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
               ),
+              IconButton(
+                tooltip: '上一年',
+                onPressed: _goPreviousYear,
+                icon: const Icon(Icons.chevron_left),
+              ),
               Text(
-                '近 12 个月',
-                style: TextStyle(color: keepdayMuted, fontSize: 12),
+                '$_year',
+                style: const TextStyle(
+                  color: keepdayText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              IconButton(
+                tooltip: '下一年',
+                onPressed: _goNextYear,
+                icon: const Icon(Icons.chevron_right),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var row = 0; row < 7; row++)
-                  Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _HeatmapWeekdayLabels(),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (var col = 0; col < 52; col++)
-                        _HeatmapCell(
-                          accent: accent,
-                          checked: checked.contains(
-                            localDateKey(
-                              today.subtract(
-                                Duration(days: (51 - col) * 7 + (6 - row)),
-                              ),
+                      const SizedBox(
+                        width: _heatmapColumnCount * _heatmapColumnWidth,
+                        child: SizedBox.shrink(),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var row = 0; row < 7; row++)
+                            Row(
+                              children: [
+                                for (
+                                  var col = 0;
+                                  col < _heatmapColumnCount;
+                                  col++
+                                )
+                                  Builder(
+                                    builder: (context) {
+                                      final date = firstCellDate.add(
+                                        Duration(days: col * 7 + row),
+                                      );
+                                      final status = date.year == _year
+                                          ? calculator.resolveDateStatus(
+                                              date: date,
+                                              createdAt: widget.habit.createdAt,
+                                              statuses: widget.statuses,
+                                            )
+                                          : DateStatus.beforeCreated;
+                                      return _HeatmapCell(
+                                        color: _statusColor(
+                                          status,
+                                          widget.accent,
+                                        ),
+                                        outlined:
+                                            status ==
+                                                DateStatus.beforeCreated ||
+                                            status == DateStatus.future,
+                                      );
+                                    },
+                                  ),
+                              ],
                             ),
-                          ),
-                        ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      _HeatmapMonthLabels(
+                        firstCellDate: firstCellDate,
+                        year: _year,
+                      ),
                     ],
                   ),
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -512,11 +786,63 @@ class _HeatmapCard extends StatelessWidget {
   }
 }
 
-class _HeatmapCell extends StatelessWidget {
-  const _HeatmapCell({required this.checked, required this.accent});
+class _HeatmapWeekdayLabels extends StatelessWidget {
+  const _HeatmapWeekdayLabels();
 
-  final bool checked;
-  final Color accent;
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final label in ['周一', '周二', '周三', '周四', '周五', '周六', '周日'])
+          SizedBox(
+            height: 16,
+            child: Text(
+              label,
+              style: const TextStyle(color: keepdayMuted, fontSize: 10),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _HeatmapMonthLabels extends StatelessWidget {
+  const _HeatmapMonthLabels({required this.firstCellDate, required this.year});
+
+  final DateTime firstCellDate;
+  final int year;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _heatmapColumnCount * _heatmapColumnWidth,
+      height: 14,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var month = 1; month <= 12; month++)
+            Positioned(
+              left:
+                  (DateTime(year, month).difference(firstCellDate).inDays ~/
+                      7) *
+                  _heatmapColumnWidth,
+              top: 0,
+              child: Text(
+                '$month月',
+                style: const TextStyle(color: keepdayMuted, fontSize: 10),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeatmapCell extends StatelessWidget {
+  const _HeatmapCell({required this.color, required this.outlined});
+
+  final Color color;
+  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
@@ -525,9 +851,33 @@ class _HeatmapCell extends StatelessWidget {
       height: 12,
       margin: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: checked ? accent : keepdayLine,
+        color: color,
         borderRadius: BorderRadius.circular(2),
+        border: outlined ? Border.all(color: keepdayLine, width: 0.7) : null,
       ),
     );
   }
+}
+
+const int _heatmapColumnCount = 53;
+const double _heatmapColumnWidth = 16;
+
+Color _statusColor(DateStatus status, Color accent) {
+  return switch (status) {
+    DateStatus.checked => accent,
+    DateStatus.checkedDuringPause => accent.withValues(alpha: 0.48),
+    DateStatus.grace => const Color(0xFFD78A1F).withValues(alpha: 0.34),
+    DateStatus.paused => keepdayLine,
+    DateStatus.missed => const Color(0xFFE8EDF0),
+    DateStatus.future || DateStatus.beforeCreated => const Color(0xFFF6F8F7),
+  };
+}
+
+Color _statusTextColor(DateStatus status) {
+  return switch (status) {
+    DateStatus.checked => Colors.white,
+    DateStatus.checkedDuringPause => Colors.white,
+    DateStatus.beforeCreated || DateStatus.future => keepdayMuted,
+    _ => keepdayText,
+  };
 }

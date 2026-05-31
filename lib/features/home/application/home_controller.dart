@@ -11,3 +11,11 @@ final activeHabitsProvider = StreamProvider<List<Habit>>((ref) {
 final todayCheckInsProvider = StreamProvider<List<CheckInRecord>>((ref) {
   return ref.watch(checkInRepositoryProvider).watchTodayRecords();
 });
+
+final checkInsProvider = StreamProvider<List<CheckInRecord>>((ref) {
+  return ref.watch(checkInRepositoryProvider).watchRecords();
+});
+
+final pausePeriodsProvider = StreamProvider<List<HabitPausePeriod>>((ref) {
+  return ref.watch(habitRepositoryProvider).watchPausePeriods();
+});
