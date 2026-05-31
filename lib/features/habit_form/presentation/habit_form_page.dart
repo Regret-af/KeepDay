@@ -504,7 +504,9 @@ class _GraceSelector extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: value == item ? keepdaySurface : Colors.transparent,
+                        color: value == item
+                            ? keepdaySurface
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                         boxShadow: value == item
                             ? const [
@@ -575,10 +577,7 @@ class _ReminderCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '开启提醒',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
+                    Text('开启提醒', style: TextStyle(fontWeight: FontWeight.w700)),
                     Text(
                       '在设定时间准时督促',
                       style: TextStyle(color: keepdayMuted, fontSize: 12),

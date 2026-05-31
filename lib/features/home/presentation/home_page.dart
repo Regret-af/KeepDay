@@ -197,8 +197,8 @@ class _ProgressCard extends StatelessWidget {
                 total == 0
                     ? '创建第一个习惯，开始记录今天。'
                     : completed == total
-                        ? '今天的习惯都完成了。'
-                        : '坚持就是胜利，还剩 ${total - completed} 个习惯待完成。',
+                    ? '今天的习惯都完成了。'
+                    : '坚持就是胜利，还剩 ${total - completed} 个习惯待完成。',
                 style: const TextStyle(color: keepdayMuted, fontSize: 12),
               ),
             ],
@@ -295,10 +295,7 @@ class _HabitCard extends ConsumerWidget {
                     const SizedBox(height: 2),
                     Text(
                       '累计 ${habit.totalCheckInCount} 次',
-                      style: const TextStyle(
-                        color: keepdayMuted,
-                        fontSize: 12,
-                      ),
+                      style: const TextStyle(color: keepdayMuted, fontSize: 12),
                     ),
                   ],
                 ),

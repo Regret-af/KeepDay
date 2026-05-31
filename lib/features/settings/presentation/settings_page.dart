@@ -120,10 +120,7 @@ class _NotificationAlert extends StatelessWidget {
               ],
             ),
           ),
-          FilledButton(
-            onPressed: () {},
-            child: const Text('去开启'),
-          ),
+          FilledButton(onPressed: () {}, child: const Text('去开启')),
         ],
       ),
     );
@@ -167,10 +164,7 @@ class _SettingsRow extends StatelessWidget {
                 style: const TextStyle(fontSize: 16, color: keepdayText),
               ),
             ),
-            if (trailing != null) ...[
-              trailing!,
-              const SizedBox(width: 8),
-            ],
+            if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
             const Icon(Icons.chevron_right, color: Color(0xFFBDC9C6)),
           ],
         ),
