@@ -43,7 +43,21 @@ class CheckInRecords extends Table {
   ];
 }
 
-@DriftDatabase(tables: [Habits, CheckInRecords], daos: [HabitDao, CheckInDao])
+class HabitPausePeriods extends Table {
+  TextColumn get id => text()();
+  TextColumn get habitId => text()();
+  TextColumn get startDate => text()();
+  TextColumn get endDate => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+@DriftDatabase(
+  tables: [Habits, CheckInRecords, HabitPausePeriods],
+  daos: [HabitDao, CheckInDao, PausePeriodDao],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase()
     : super(
@@ -56,7 +70,17 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.createTable(habitPausePeriods);
+      }
+    },
+  );
 }
 
 @DriftAccessor(tables: [Habits])
@@ -137,6 +161,30 @@ class HabitDao extends DatabaseAccessor<AppDatabase> with _$HabitDaoMixin {
       HabitsCompanion(totalCheckInCount: Value(count), updatedAt: Value(now)),
     );
   }
+
+  Future<void> updateStats(
+    String habitId, {
+    required int totalCheckInCount,
+    required int bestStreak,
+    required int currentStreak,
+  }) {
+    final now = DateTime.now();
+    return (update(habits)..where((table) => table.id.equals(habitId))).write(
+      HabitsCompanion(
+        totalCheckInCount: Value(totalCheckInCount),
+        bestStreak: Value(bestStreak),
+        currentStreak: Value(currentStreak),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<void> updateStatus(String id, String status) {
+    final now = DateTime.now();
+    return (update(habits)..where((table) => table.id.equals(id))).write(
+      HabitsCompanion(status: Value(status), updatedAt: Value(now)),
+    );
+  }
 }
 
 @DriftAccessor(tables: [CheckInRecords])
@@ -147,6 +195,14 @@ class CheckInDao extends DatabaseAccessor<AppDatabase> with _$CheckInDaoMixin {
     return (select(
       checkInRecords,
     )..where((record) => record.checkInDate.equals(date))).watch();
+  }
+
+  Stream<List<CheckInRecord>> watchRecords() {
+    return (select(checkInRecords)..orderBy([
+          (record) => OrderingTerm.asc(record.checkInDate),
+          (record) => OrderingTerm.asc(record.createdAt),
+        ]))
+        .watch();
   }
 
   Future<List<CheckInRecord>> getRecordsByHabitId(String habitId) {
@@ -182,5 +238,45 @@ class CheckInDao extends DatabaseAccessor<AppDatabase> with _$CheckInDaoMixin {
               record.habitId.equals(habitId) & record.checkInDate.equals(date),
         ))
         .go();
+  }
+}
+
+@DriftAccessor(tables: [HabitPausePeriods])
+class PausePeriodDao extends DatabaseAccessor<AppDatabase>
+    with _$PausePeriodDaoMixin {
+  PausePeriodDao(super.db);
+
+  Stream<List<HabitPausePeriod>> watchPausePeriods() {
+    return (select(habitPausePeriods)..orderBy([
+          (period) => OrderingTerm.asc(period.startDate),
+          (period) => OrderingTerm.asc(period.createdAt),
+        ]))
+        .watch();
+  }
+
+  Future<List<HabitPausePeriod>> getPausePeriodsByHabitId(String habitId) {
+    return (select(habitPausePeriods)
+          ..where((period) => period.habitId.equals(habitId))
+          ..orderBy([
+            (period) => OrderingTerm.asc(period.startDate),
+            (period) => OrderingTerm.asc(period.createdAt),
+          ]))
+        .get();
+  }
+
+  Future<HabitPausePeriod?> getActivePausePeriod(String habitId) {
+    return (select(habitPausePeriods)..where(
+          (period) => period.habitId.equals(habitId) & period.endDate.isNull(),
+        ))
+        .getSingleOrNull();
+  }
+
+  Future<void> insertPausePeriod(HabitPausePeriodsCompanion period) {
+    return into(habitPausePeriods).insert(period);
+  }
+
+  Future<void> closePausePeriod(String id, String endDate) {
+    return (update(habitPausePeriods)..where((period) => period.id.equals(id)))
+        .write(HabitPausePeriodsCompanion(endDate: Value(endDate)));
   }
 }
