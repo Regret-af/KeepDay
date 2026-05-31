@@ -16,3 +16,10 @@ final habitRecordsProvider = FutureProvider.family<List<CheckInRecord>, String>(
     return ref.watch(checkInRepositoryProvider).getRecordsByHabitId(habitId);
   },
 );
+
+final habitPausePeriodsProvider =
+    FutureProvider.family<List<HabitPausePeriod>, String>((ref, habitId) {
+      return ref
+          .watch(habitRepositoryProvider)
+          .getPausePeriodsByHabitId(habitId);
+    });
