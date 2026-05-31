@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/habit_detail/presentation/habit_detail_page.dart';
 import '../../features/habit_form/presentation/habit_form_page.dart';
 import '../../features/home/presentation/home_page.dart';
+import '../../features/settings/presentation/habit_management_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -38,6 +39,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         name: 'settings',
         builder: (context, state) => const SettingsPage(),
+      ),
+      GoRoute(
+        path: '/settings/habits',
+        name: 'settings-habits',
+        builder: (context, state) => const HabitManagementPage(),
       ),
     ],
   );

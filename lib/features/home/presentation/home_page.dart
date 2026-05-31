@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/repositories/check_in_repository.dart';
+import '../../../data/repositories/habit_repository.dart';
+import '../../../domain/services/streak_calculator.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
 import '../../../shared/widgets/keepday_shell.dart';
@@ -16,7 +18,8 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final habitsAsync = ref.watch(activeHabitsProvider);
-    final todayRecordsAsync = ref.watch(todayCheckInsProvider);
+    final recordsAsync = ref.watch(checkInsProvider);
+    final pausePeriodsAsync = ref.watch(pausePeriodsProvider);
 
     return Scaffold(
       appBar: KeepDayTopBar(
@@ -63,40 +66,67 @@ class HomePage extends ConsumerWidget {
               error: (error, stackTrace) =>
                   KeepDayCard(child: Text('加载失败：$error')),
               data: (habits) {
-                final todayRecords = todayRecordsAsync.value ?? const [];
-                final checkedIds = todayRecords
-                    .map((record) => record.habitId)
-                    .toSet();
-                final sortedHabits = [...habits]
-                  ..sort((a, b) {
-                    final aChecked = checkedIds.contains(a.id);
-                    final bChecked = checkedIds.contains(b.id);
-                    if (aChecked != bChecked) {
-                      return aChecked ? 1 : -1;
-                    }
-                    return a.createdAt.compareTo(b.createdAt);
-                  });
-                final completed = habits
-                    .where((habit) => checkedIds.contains(habit.id))
+                final records = recordsAsync.value ?? const [];
+                final pausePeriods = pausePeriodsAsync.value ?? const [];
+                final items = habits
+                    .map(
+                      (habit) => _HomeHabitItem.from(
+                        habit: habit,
+                        records: records
+                            .where((record) => record.habitId == habit.id)
+                            .toList(),
+                        pausePeriods: pausePeriods
+                            .where((period) => period.habitId == habit.id)
+                            .toList(),
+                      ),
+                    )
+                    .toList();
+                final normalItems =
+                    items
+                        .where(
+                          (item) => item.homeStatus != HomeHabitStatus.paused,
+                        )
+                        .toList()
+                      ..sort((a, b) {
+                        final statusCompare =
+                            _homeStatusOrder(a.homeStatus) -
+                            _homeStatusOrder(b.homeStatus);
+                        if (statusCompare != 0) {
+                          return statusCompare;
+                        }
+                        return a.habit.createdAt.compareTo(b.habit.createdAt);
+                      });
+                final pausedItems = items
+                    .where((item) => item.homeStatus == HomeHabitStatus.paused)
+                    .toList();
+                final completed = normalItems
+                    .where((item) => item.homeStatus == HomeHabitStatus.checked)
                     .length;
+                final resting = normalItems
+                    .where((item) => item.homeStatus == HomeHabitStatus.resting)
+                    .length;
+                final total = normalItems.length - resting;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _ProgressCard(completed: completed, total: habits.length),
+                    _ProgressCard(
+                      completed: completed,
+                      total: total,
+                      resting: resting,
+                    ),
                     const SizedBox(height: 14),
                     if (habits.isEmpty)
                       const _EmptyHabitsCard()
+                    else if (normalItems.isEmpty)
+                      const _AllPausedCard()
                     else
-                      for (final habit in sortedHabits) ...[
-                        _HabitCard(
-                          habit: habit,
-                          checkedToday: checkedIds.contains(habit.id),
-                        ),
+                      for (final item in normalItems) ...[
+                        _HabitCard(item: item),
                         const SizedBox(height: 12),
                       ],
                     const SizedBox(height: 18),
-                    const _PausedHabitsPlaceholder(),
+                    _PausedHabitsSection(items: pausedItems),
                   ],
                 );
               },
@@ -111,6 +141,53 @@ class HomePage extends ConsumerWidget {
     const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
     return '${date.month} 月 ${date.day} 日，${weekdays[date.weekday - 1]}';
   }
+}
+
+class _HomeHabitItem {
+  const _HomeHabitItem({
+    required this.habit,
+    required this.homeStatus,
+    required this.stats,
+  });
+
+  factory _HomeHabitItem.from({
+    required Habit habit,
+    required List<CheckInRecord> records,
+    required List<HabitPausePeriod> pausePeriods,
+  }) {
+    final calculator = const StreakCalculator();
+    final result = calculator.calculate(
+      createdAt: habit.createdAt,
+      gracePerWeek: habit.gracePerWeek,
+      checkInDates: records.map((record) => record.checkInDate),
+      pauseRanges: pausePeriods.map(
+        (period) =>
+            PauseRange(startDate: period.startDate, endDate: period.endDate),
+      ),
+    );
+    return _HomeHabitItem(
+      habit: habit,
+      homeStatus: calculator.resolveHomeStatus(
+        habitStatus: habit.status,
+        createdAt: habit.createdAt,
+        statuses: result.dateStatuses,
+      ),
+      stats: result.stats,
+    );
+  }
+
+  final Habit habit;
+  final HomeHabitStatus homeStatus;
+  final HabitStats stats;
+}
+
+int _homeStatusOrder(HomeHabitStatus status) {
+  return switch (status) {
+    HomeHabitStatus.notChecked => 0,
+    HomeHabitStatus.resting => 1,
+    HomeHabitStatus.checked => 2,
+    HomeHabitStatus.paused => 3,
+  };
 }
 
 class _NotificationBanner extends StatelessWidget {
@@ -145,10 +222,15 @@ class _NotificationBanner extends StatelessWidget {
 }
 
 class _ProgressCard extends StatelessWidget {
-  const _ProgressCard({required this.completed, required this.total});
+  const _ProgressCard({
+    required this.completed,
+    required this.total,
+    required this.resting,
+  });
 
   final int completed;
   final int total;
+  final int resting;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +277,9 @@ class _ProgressCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 total == 0
-                    ? '创建第一个习惯，开始记录今天。'
+                    ? resting > 0
+                          ? '今天有 $resting 个习惯处于宽限休息中。'
+                          : '创建第一个习惯，开始记录今天。'
                     : completed == total
                     ? '今天的习惯都完成了。'
                     : '坚持就是胜利，还剩 ${total - completed} 个习惯待完成。',
@@ -247,15 +331,31 @@ class _EmptyHabitsCard extends StatelessWidget {
   }
 }
 
-class _HabitCard extends ConsumerWidget {
-  const _HabitCard({required this.habit, required this.checkedToday});
+class _AllPausedCard extends StatelessWidget {
+  const _AllPausedCard();
 
-  final Habit habit;
-  final bool checkedToday;
+  @override
+  Widget build(BuildContext context) {
+    return const KeepDayCard(
+      child: Text(
+        '当前习惯都处于暂停中，可以在下方展开查看并恢复。',
+        style: TextStyle(color: keepdayMuted),
+      ),
+    );
+  }
+}
+
+class _HabitCard extends ConsumerWidget {
+  const _HabitCard({required this.item});
+
+  final _HomeHabitItem item;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final habit = item.habit;
     final accent = habitReadableColor(habit.color);
+    final checkedToday = item.homeStatus == HomeHabitStatus.checked;
+    final resting = item.homeStatus == HomeHabitStatus.resting;
     return KeepDayCard(
       padding: EdgeInsets.zero,
       child: InkWell(
@@ -294,18 +394,29 @@ class _HabitCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '累计 ${habit.totalCheckInCount} 次',
+                      '连续 ${item.stats.currentStreak} 天 · 累计 ${item.stats.totalCheckInCount} 次',
                       style: const TextStyle(color: keepdayMuted, fontSize: 12),
                     ),
+                    if (habit.reminderEnabled && habit.reminderTime != null)
+                      Text(
+                        '提醒 ${habit.reminderTime}',
+                        style: const TextStyle(
+                          color: keepdayMuted,
+                          fontSize: 12,
+                        ),
+                      ),
                   ],
                 ),
               ),
               const SizedBox(width: 12),
-              KeepDayStatusRing(
-                checked: checkedToday,
-                checkedColor: accent,
-                onTap: () => _toggle(context, ref),
-              ),
+              if (resting)
+                _RestingBadge(accent: accent)
+              else
+                KeepDayStatusRing(
+                  checked: checkedToday,
+                  checkedColor: accent,
+                  onTap: () => _toggle(context, ref),
+                ),
             ],
           ),
         ),
@@ -315,6 +426,8 @@ class _HabitCard extends ConsumerWidget {
 
   Future<void> _toggle(BuildContext context, WidgetRef ref) async {
     final repository = ref.read(checkInRepositoryProvider);
+    final habit = item.habit;
+    final checkedToday = item.homeStatus == HomeHabitStatus.checked;
     try {
       if (checkedToday) {
         final confirmed = await showConfirmDialog(
@@ -339,34 +452,106 @@ class _HabitCard extends ConsumerWidget {
   }
 }
 
-class _PausedHabitsPlaceholder extends StatelessWidget {
-  const _PausedHabitsPlaceholder();
+class _RestingBadge extends StatelessWidget {
+  const _RestingBadge({required this.accent});
+
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '休息中',
+        style: TextStyle(
+          color: accent,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _PausedHabitsSection extends ConsumerWidget {
+  const _PausedHabitsSection({required this.items});
+
+  final List<_HomeHabitItem> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return ExpansionTile(
+      initiallyExpanded: true,
       tilePadding: EdgeInsets.zero,
       iconColor: keepdayMuted,
       collapsedIconColor: keepdayMuted,
-      title: const Text(
-        '已阶段性暂停的习惯',
-        style: TextStyle(
+      title: Text(
+        '已暂停的习惯 (${items.length})',
+        style: const TextStyle(
           color: keepdayMuted,
           fontSize: 17,
           fontWeight: FontWeight.w700,
         ),
       ),
-      children: const [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(
-              '暂停与恢复将在 V0.2 接入。',
-              style: TextStyle(color: keepdayMuted),
+      children: [
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: KeepDayCard(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => context.push('/habits/${item.habit.id}'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            KeepDayHabitIcon(
+                              icon: item.habit.icon,
+                              background: habitSoftColor(item.habit.color),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                item.habit.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(habitRepositoryProvider)
+                            .resumeHabit(item.habit.id);
+                      } catch (error) {
+                        if (context.mounted) {
+                          AppToast.show(context, '恢复失败：$error');
+                        }
+                      }
+                    },
+                    child: const Text('恢复'),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }
