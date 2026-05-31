@@ -142,7 +142,7 @@ jobs:
     needs:
       - changes
       - required-check
-    if: needs.changes.outputs.docs_only != 'true'
+    if: always() && needs.changes.outputs.docs_only != 'true' && needs.required-check.result == 'success'
     permissions:
       contents: read
 
